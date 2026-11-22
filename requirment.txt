@@ -3,3 +3,4 @@ plotly
 pandas
 pytrends
 google-api-python-client
+python-dotenv
