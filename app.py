@@ -5,20 +5,10 @@ from collections import Counter
 
 import streamlit as st
 import pandas as pd
-import os
-import streamlit as st
 
-# Streamlit Cloud پر Secrets سے پڑھیں، مقامی طور پر ماحول متغیرات پر واپس جائیں
-YOUTUBE_API_KEY = st.secrets.get("YOUTUBE_API_KEY", os.getenv("YOUTUBE_API_KEY", ""))
 from pytrends.request import TrendReq
 from googleapiclient.discovery import build
 
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-load_dotenv()
 
 st.set_page_config(
     page_title="Viral SEO Generator",
@@ -26,57 +16,37 @@ st.set_page_config(
     layout="wide",
 )
 
-# Streamlit Cloud Secrets support
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
-if not YOUTUBE_API_KEY:
-    try:
-        YOUTUBE_API_KEY = st.secrets.get("YOUTUBE_API_KEY", "")
-    except Exception:
-        pass
+# API key: Streamlit Secrets se, warna environment variable se
+YOUTUBE_API_KEY = ""
+try:
+    YOUTUBE_API_KEY = st.secrets.get("YOUTUBE_API_KEY", "")
+except Exception:
+    YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
-# --- Custom CSS ---
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
-        font-weight: 800;
+        font-size: 2.5rem; font-weight: 800;
         background: linear-gradient(90deg, #ff0000, #ff6b6b);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
     .title-box {
-        background: #f0f2f6;
-        padding: 12px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        border-left: 4px solid #ff0000;
-        color: #000;
-    }
-    .stButton>button {
-        background: linear-gradient(90deg, #ff0000, #ff6b6b);
-        color: white;
-        font-weight: bold;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 25px;
+        background: #f0f2f6; padding: 12px; border-radius: 8px;
+        margin-bottom: 8px; border-left: 4px solid #ff0000; color: #000;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============================================================
-# HELPERS
-# ============================================================
-
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_google_trends(keyword: str, region: str = "PK"):
+def get_google_trends(keyword, region="PK"):
     try:
-        pytrends = TrendReq(hl="en-US", tz=300, timeout=(10, 25))
-        pytrends.build_payload([keyword], timeframe="now 7-d", geo=region)
-        related = pytrends.related_queries()
+        pt = TrendReq(hl="en-US", tz=300, timeout=(10, 25))
+        pt.build_payload([keyword], timeframe="now 7-d", geo=region)
+        related = pt.related_queries()
         rising = related.get(keyword, {}).get("rising")
         top = related.get(keyword, {}).get("top")
-
         rising_list = rising.head(10).to_dict("records") if rising is not None and not rising.empty else []
         top_list = top.head(10).to_dict("records") if top is not None and not top.empty else []
         return {"rising": rising_list, "top": top_list}
@@ -85,31 +55,25 @@ def get_google_trends(keyword: str, region: str = "PK"):
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_youtube_top_videos(keyword: str, region: str = "PK", max_results: int = 20):
+def get_youtube_videos(keyword, region="PK", max_results=20):
     if not YOUTUBE_API_KEY:
-        return {"error": "YouTube API key missing. Add YOUTUBE_API_KEY in Streamlit Secrets.", "videos": []}
+        return {"error": "YouTube API key missing in Secrets.", "videos": []}
     try:
-        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
-        search_resp = youtube.search().list(
+        yt = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        s_resp = yt.search().list(
             q=keyword, part="snippet", type="video",
             maxResults=max_results, order="viewCount",
             regionCode=region, relevanceLanguage="en",
         ).execute()
-
-        video_ids = [i["id"]["videoId"] for i in search_resp.get("items", [])]
-        if not video_ids:
+        ids = [i["id"]["videoId"] for i in s_resp.get("items", [])]
+        if not ids:
             return {"error": "No videos found.", "videos": []}
-
-        stats_resp = youtube.videos().list(
-            part="statistics,snippet", id=",".join(video_ids)
-        ).execute()
-
+        v_resp = yt.videos().list(part="statistics,snippet", id=",".join(ids)).execute()
         videos = []
-        for item in stats_resp.get("items", []):
+        for item in v_resp.get("items", []):
             s = item["statistics"]
             sn = item["snippet"]
             videos.append({
-                "video_id": item["id"],
                 "title": sn["title"],
                 "channel": sn["channelTitle"],
                 "published": sn["publishedAt"][:10],
@@ -125,35 +89,33 @@ def get_youtube_top_videos(keyword: str, region: str = "PK", max_results: int = 
         return {"error": str(e), "videos": []}
 
 
-def extract_title_patterns(videos):
-    patterns = {k: 0 for k in ["numbers", "question", "how_to", "negative",
-                                "brackets", "caps_words", "curiosity", "urgency"]}
-    number_re = re.compile(r"\b\d+\b")
+def extract_patterns(videos):
+    p = {k: 0 for k in ["numbers", "question", "how_to", "negative",
+                        "brackets", "caps", "curiosity", "urgency"]}
+    num_re = re.compile(r"\b\d+\b")
     caps_re = re.compile(r"\b[A-Z]{3,}\b")
-    negative_words = ["stop", "never", "don't", "mistake", "wrong", "avoid", "fail", "won't"]
-    curiosity_words = ["secret", "truth", "nobody", "no one", "revealed", "hidden", "actually", "really"]
-    urgency_words = ["now", "today", "fast", "quick", "2024", "2025", "2026", "new"]
-
+    neg = ["stop", "never", "don't", "mistake", "wrong", "avoid", "fail"]
+    cur = ["secret", "truth", "nobody", "no one", "revealed", "hidden"]
+    urg = ["now", "today", "fast", "quick", "2024", "2025", "2026", "new"]
     for v in videos:
         t = v["title"].lower()
-        if number_re.search(t): patterns["numbers"] += 1
-        if "?" in t: patterns["question"] += 1
-        if "how to" in t: patterns["how_to"] += 1
-        if any(w in t for w in negative_words): patterns["negative"] += 1
-        if "[" in t or "(" in t: patterns["brackets"] += 1
-        if caps_re.search(v["title"]): patterns["caps_words"] += 1
-        if any(w in t for w in curiosity_words): patterns["curiosity"] += 1
-        if any(w in t for w in urgency_words): patterns["urgency"] += 1
-    return patterns
+        if num_re.search(t): p["numbers"] += 1
+        if "?" in t: p["question"] += 1
+        if "how to" in t: p["how_to"] += 1
+        if any(w in t for w in neg): p["negative"] += 1
+        if "[" in t or "(" in t: p["brackets"] += 1
+        if caps_re.search(v["title"]): p["caps"] += 1
+        if any(w in t for w in cur): p["curiosity"] += 1
+        if any(w in t for w in urg): p["urgency"] += 1
+    return p
 
 
-def generate_clickbait_titles(keyword, patterns, rising):
+def make_titles(keyword, patterns, rising):
     kw = keyword.title()
     year = datetime.now().year
-    rising_terms = [r.get("query", "") for r in rising[:3] if r.get("query")]
-    bonus = rising_terms[0] if rising_terms else keyword
-
-    titles = [
+    r = [x.get("query", "") for x in rising[:3] if x.get("query")]
+    bonus = r[0] if r else keyword
+    t = [
         f"STOP Doing This With {kw} — You're Losing Money!",
         f"The TRUTH About {kw} Nobody Tells You ({year})",
         f"I Tried {kw} for 30 Days — Here's What Happened",
@@ -168,130 +130,107 @@ def generate_clickbait_titles(keyword, patterns, rising):
         f"How {kw} Will Change Everything in {year}",
     ]
     if patterns.get("numbers", 0) > 5:
-        titles.append(f"10 {kw} Tricks That Actually Work in {year}")
+        t.append(f"10 {kw} Tricks That Actually Work in {year}")
     if patterns.get("curiosity", 0) > 3:
-        titles.append(f"The Hidden Side of {kw} Nobody Wants You to Know")
+        t.append(f"The Hidden Side of {kw} Nobody Wants You to Know")
     if patterns.get("negative", 0) > 3:
-        titles.append(f"Never Do This With {kw} (It's Ruining Your Results)")
-    return titles
+        t.append(f"Never Do This With {kw} (It's Ruining Your Results)")
+    return t
 
 
-def generate_description(keyword, rising):
+def make_desc(keyword, rising):
     kw = keyword.title()
     year = datetime.now().year
-    rising_terms = [r.get("query", "") for r in rising[:5] if r.get("query")]
-    hashtag = keyword.replace(" ", "")
+    r = [x.get("query", "") for x in rising[:5] if x.get("query")]
+    h = keyword.replace(" ", "")
+    d = f"""🎯 {kw} — Complete Guide ({year})
 
-    desc = f"""🎯 {kw} — Complete Guide ({year})
-
-In this video, we break down everything about {keyword} — latest updates, hidden tips, and the exact strategy top creators are using RIGHT NOW.
+In this video, we break down everything about {keyword} — latest updates, hidden tips, and the exact strategy top creators use RIGHT NOW.
 
 ⏱️ TIMESTAMPS:
 00:00 — Intro: Why {kw} Matters
 00:45 — The Truth About {kw}
 02:30 — Step-by-Step Breakdown
-05:15 — Common Mistakes (Avoid These!)
+05:15 — Common Mistakes (Avoid!)
 08:00 — Pro Tips & Secret Hacks
 10:30 — Final Recommendation
 
 🔗 USEFUL LINKS:
-• Subscribe: [Your Channel Link]
-• Playlist: [Related Playlist]
+• Subscribe: [Your Channel]
+• Playlist: [Related]
 
 📌 RELATED SEARCHES:
 """
-    for term in rising_terms:
-        desc += f"• {term}\n"
+    for x in r:
+        d += f"• {x}\n"
+    d += f"""
 
-    desc += f"""
-💬 Comment below: What should we cover next?
+💬 Comment below: What next?
 
-# {hashtag} #{hashtag}{year} #{hashtag}tips #{hashtag}guide #viral
+# {h} #{h}{year} #{h}tips #{h}guide #viral
 """
-    return desc
+    return d
 
 
-def generate_tags(keyword, videos, rising):
-    counter = Counter()
+def make_tags(keyword, videos, rising):
+    c = Counter()
     for v in videos:
         for t in v.get("tags", []):
-            counter[t.lower().strip()] += 1
-
+            c[t.lower().strip()] += 1
     kw = keyword.lower().strip()
-    variations = [
-        kw, f"{kw} {datetime.now().year}", f"{kw} tutorial", f"{kw} guide",
-        f"how to {kw}", f"best {kw}", f"{kw} tips", f"{kw} tricks",
-        f"{kw} explained", f"{kw} in pakistan", f"{kw} urdu", f"{kw} hindi",
-    ]
-    for v in variations:
-        counter[v] += 5
-
-    for r in rising[:10]:
-        q = r.get("query", "").lower().strip()
-        if q:
-            counter[q] += 3
-
-    return [t for t, _ in counter.most_common(25)]
+    for v in [kw, f"{kw} {datetime.now().year}", f"{kw} tutorial", f"{kw} guide",
+              f"how to {kw}", f"best {kw}", f"{kw} tips", f"{kw} tricks",
+              f"{kw} explained", f"{kw} in pakistan", f"{kw} urdu", f"{kw} hindi"]:
+        c[v] += 5
+    for x in rising[:10]:
+        q = x.get("query", "").lower().strip()
+        if q: c[q] += 3
+    return [t for t, _ in c.most_common(25)]
 
 
-def viral_strategy_summary(patterns, videos):
-    strategy = []
+def make_strategy(patterns, videos):
+    s = []
     if patterns.get("curiosity", 0) >= 3:
-        strategy.append("✅ **Curiosity Gap:** Titles with 'secret/truth/nobody' get higher CTR.")
+        s.append("✅ **Curiosity Gap:** 'secret/truth/nobody' titles = higher CTR")
     if patterns.get("negative", 0) >= 3:
-        strategy.append("✅ **Loss Aversion:** 'Stop/never/mistake' framing works.")
+        s.append("✅ **Loss Aversion:** 'stop/never/mistake' framing works")
     if patterns.get("numbers", 0) >= 5:
-        strategy.append("✅ **Listicles:** Numbers in titles (Top 5, 7 Tips) dominate.")
+        s.append("✅ **Listicles:** Numbers (Top 5, 7 Tips) dominate")
     if patterns.get("question", 0) >= 3:
-        strategy.append("✅ **Questions:** Titles ending with '?' improve CTR ~14%.")
+        s.append("✅ **Questions:** '?' titles improve CTR ~14%")
     if patterns.get("urgency", 0) >= 3:
-        strategy.append("✅ **Urgency:** Include year, 'now', 'new' — higher engagement.")
-
-    strategy.append("⏰ **Upload Timing:** Post during 'rising' phase (24–72h window) — low competition.")
-    strategy.append("🎯 **A/B Test:** If CTR < 3% in 48h, swap thumbnail + title.")
-
+        s.append("✅ **Urgency:** Include year / now / new")
+    s.append("⏰ **Upload Timing:** Post during 'rising' phase (24–72h window)")
+    s.append("🎯 **A/B Test:** If CTR < 3% in 48h, swap thumbnail + title")
     if videos:
-        avg_v = sum(v["views"] for v in videos) / len(videos)
-        avg_l = sum(v["likes"] for v in videos) / len(videos)
-        if avg_v > 0:
-            strategy.append(f"📊 **Benchmark:** Top 20 videos avg like ratio: {(avg_l/avg_v)*100:.2f}%")
-    return strategy
+        av = sum(v["views"] for v in videos) / len(videos)
+        al = sum(v["likes"] for v in videos) / len(videos)
+        if av > 0:
+            s.append(f"📊 **Benchmark:** Top 20 avg like ratio: {(al/av)*100:.2f}%")
+    return s
 
-
-# ============================================================
-# UI
-# ============================================================
 
 st.markdown('<h1 class="main-header">🚀 Viral SEO Generator</h1>', unsafe_allow_html=True)
-st.caption("Google Trends + YouTube Top 20 Analysis → Clickbait Titles, SEO Description & Tags")
+st.caption("Google Trends + YouTube Top 20 → Titles, Descriptions, Tags")
 
 with st.sidebar:
     st.header("⚙️ Settings")
-    keyword = st.text_input("🔍 Keyword / Topic", value="chat gpt")
+    keyword = st.text_input("🔍 Keyword", value="chat gpt")
     region = st.selectbox("🌍 Region", ["PK", "IN", "US", "GB", "AE", "SA"], index=0)
-    max_videos = st.slider("📹 Videos to Analyze", 10, 20, 20)
-
+    max_videos = st.slider("📹 Videos", 10, 20, 20)
     st.markdown("---")
     st.markdown("### 🔑 API Status")
-    if YOUTUBE_API_KEY:
-        st.success("YouTube API ✅")
-    else:
-        st.error("API key missing ❌")
-
-    st.markdown("---")
-    st.caption("Made with ❤️ for creators")
-
+    st.success("YouTube API ✅") if YOUTUBE_API_KEY else st.error("API key missing ❌")
 
 if st.button("🔥 Analyze & Generate", use_container_width=True):
     if not keyword.strip():
-        st.warning("Pehle keyword daalein.")
+        st.warning("Keyword daalein.")
         st.stop()
 
-    with st.spinner("📈 Google Trends fetch ho raha hai..."):
+    with st.spinner("📈 Trends fetch ho rahe hain..."):
         trends = get_google_trends(keyword, region)
-
-    with st.spinner("📹 Top 20 YouTube videos analyze ho rahe hain..."):
-        yt = get_youtube_top_videos(keyword, region, max_videos)
+    with st.spinner("📹 YouTube videos analyze ho rahe hain..."):
+        yt = get_youtube_videos(keyword, region, max_videos)
 
     if "error" in yt and not yt.get("videos"):
         st.error(f"YouTube Error: {yt['error']}")
@@ -300,25 +239,22 @@ if st.button("🔥 Analyze & Generate", use_container_width=True):
     videos = yt.get("videos", [])
     rising = trends.get("rising", [])
     top_q = trends.get("top", [])
+    patterns = extract_patterns(videos)
+    titles = make_titles(keyword, patterns, rising)
+    description = make_desc(keyword, rising)
+    tags = make_tags(keyword, videos, rising)
+    strategy = make_strategy(patterns, videos)
 
-    patterns = extract_title_patterns(videos)
-    titles = generate_clickbait_titles(keyword, patterns, rising)
-    description = generate_description(keyword, rising)
-    tags = generate_tags(keyword, videos, rising)
-    strategy = viral_strategy_summary(patterns, videos)
-
-    # --- Metrics ---
     c1, c2, c3, c4 = st.columns(4)
-    total_views = sum(v["views"] for v in videos)
-    total_likes = sum(v["likes"] for v in videos)
-    avg_views = total_views // len(videos) if videos else 0
+    tv = sum(v["views"] for v in videos)
+    tl = sum(v["likes"] for v in videos)
+    av = tv // len(videos) if videos else 0
     c1.metric("📹 Videos", len(videos))
-    c2.metric("👀 Total Views", f"{total_views:,}")
-    c3.metric("👍 Total Likes", f"{total_likes:,}")
-    c4.metric("📊 Avg Views", f"{avg_views:,}")
+    c2.metric("👀 Total Views", f"{tv:,}")
+    c3.metric("👍 Total Likes", f"{tl:,}")
+    c4.metric("📊 Avg Views", f"{av:,}")
 
     st.markdown("---")
-
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ["📈 Trends", "🎬 Videos", "✍️ Titles", "📝 Description", "🏷️ Tags & Strategy"]
     )
@@ -327,105 +263,68 @@ if st.button("🔥 Analyze & Generate", use_container_width=True):
         st.subheader(f"Google Trends — '{keyword}' ({region})")
         a, b = st.columns(2)
         with a:
-            st.markdown("### 🔥 Rising Queries")
+            st.markdown("### 🔥 Rising")
             if rising:
                 for r in rising[:10]:
                     st.markdown(
                         f'<div class="title-box"><b>{r.get("query","")}</b> — '
                         f'<span style="color:#ff0000;">+{r.get("value",0)}%</span></div>',
-                        unsafe_allow_html=True,
-                    )
+                        unsafe_allow_html=True)
             else:
-                st.info("No rising queries data.")
+                st.info("No rising data.")
         with b:
-            st.markdown("### 🏆 Top Queries")
+            st.markdown("### 🏆 Top")
             if top_q:
                 for t in top_q[:10]:
                     st.markdown(
                         f'<div class="title-box"><b>{t.get("query","")}</b> — {t.get("value",0)}</div>',
-                        unsafe_allow_html=True,
-                    )
+                        unsafe_allow_html=True)
             else:
-                st.info("No top query data.")
+                st.info("No top data.")
 
     with tab2:
         st.subheader("Top 20 Viral Videos")
         if videos:
             df = pd.DataFrame(videos)[["title", "channel", "views", "likes", "comments", "published", "url"]]
             df["Like %"] = (df["likes"] / df["views"] * 100).round(2)
-            st.dataframe(
-                df, use_container_width=True,
-                column_config={"url": st.column_config.LinkColumn("Watch")},
-            )
-
+            st.dataframe(df, use_container_width=True,
+                         column_config={"url": st.column_config.LinkColumn("Watch")})
             st.markdown("### 📊 Top 10 by Views")
-            chart_df = df.head(10).set_index("title")["views"]
-            st.bar_chart(chart_df, color="#ff0000")
-
-            st.markdown("### 🧠 Viral Title Patterns")
-            pdata = pd.DataFrame([
-                {"Pattern": k.replace("_", " ").title(), "Count": v}
-                for k, v in patterns.items() if v > 0
-            ]).sort_values("Count", ascending=False)
+            st.bar_chart(df.head(10).set_index("title")["views"], color="#ff0000")
+            st.markdown("### 🧠 Title Patterns")
+            pdata = pd.DataFrame([{"Pattern": k.replace("_", " ").title(), "Count": v}
+                                  for k, v in patterns.items() if v > 0]).sort_values("Count", ascending=False)
             if not pdata.empty:
                 st.bar_chart(pdata.set_index("Pattern")["Count"], color="#ff6b6b")
         else:
-            st.warning("No videos found.")
+            st.warning("No videos.")
 
     with tab3:
         st.subheader("🎯 Clickbait Titles")
-        st.caption("Copy karein aur YouTube Studio mein paste karein")
         for i, t in enumerate(titles, 1):
-            col_a, col_b = st.columns([5, 1])
-            with col_a:
-                st.markdown(f'<div class="title-box">#{i} — {t}</div>', unsafe_allow_html=True)
-            with col_b:
-                st.code(t, language="text")
-
-        st.markdown("---")
-        st.markdown("""
-        **Title Rules:**
-        - Length: 50–65 characters
-        - Hook: Curiosity / Loss / Transformation
-        - A/B test 2–3 variations for 48h
-        """)
+            st.markdown(f'<div class="title-box">#{i} — {t}</div>', unsafe_allow_html=True)
 
     with tab4:
         st.subheader("📝 SEO Description")
-        st.text_area("Copy:", description, height=420)
-        st.download_button(
-            "📥 Download Description",
-            description,
-            file_name=f"{keyword.replace(' ', '_')}_description.txt",
-        )
+        st.text_area("Copy:", description, height=400)
+        st.download_button("📥 Download", description,
+                           file_name=f"{keyword.replace(' ', '_')}_desc.txt")
 
     with tab5:
-        col_t, col_s = st.columns(2)
-        with col_t:
+        c_a, c_b = st.columns(2)
+        with c_a:
             st.subheader("🏷️ Top 25 Tags")
             tag_str = ", ".join(tags)
             st.code(tag_str, language="text")
             st.caption(f"{len(tag_str)}/500 chars")
-            st.download_button(
-                "📥 Download Tags",
-                tag_str,
-                file_name=f"{keyword.replace(' ', '_')}_tags.txt",
-            )
-        with col_s:
-            st.subheader("📊 Viral Strategy")
+            st.download_button("📥 Download Tags", tag_str,
+                               file_name=f"{keyword.replace(' ', '_')}_tags.txt")
+        with c_b:
+            st.subheader("📊 Strategy")
             for s in strategy:
                 st.markdown(f"- {s}")
 
-    st.markdown("---")
-    st.caption(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} | Google Trends + YouTube API v3")
+    st.caption(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 else:
     st.info("👈 Sidebar mein keyword daalein aur **🔥 Analyze & Generate** dabayein.")
-    st.markdown("### 🎯 Yeh App Kya Karti Hai")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("**📈 Trends**\n- Rising queries\n- Region-specific\n- Real-time demand")
-    with c2:
-        st.markdown("**📹 YouTube**\n- Top 20 videos\n- Pattern detection\n- Engagement data")
-    with c3:
-        st.markdown("**🚀 SEO Output**\n- Clickbait titles\n- Full description\n- 25 optimized tags")
