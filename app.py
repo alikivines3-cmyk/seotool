@@ -7,7 +7,7 @@ import urllib.parse
 import re
 from collections import Counter
 
-st.set_page_config(page_title="SEO Viral Engine Pro v5 - UK USA Special", page_icon="🔥", layout="wide")
+st.set_page_config(page_title="SEO Viral Engine Pro v5.1 - No Repeat Tags", page_icon="🔥", layout="wide")
 
 st.markdown("""
 <style>
@@ -16,7 +16,7 @@ st.markdown("""
 .card {background:#15151F; border:1px solid #2A2A3A; border-radius:16px; padding:18px; margin:10px 0;}
 .viral-card {background: linear-gradient(135deg,#1A0A1A,#150A2A); border:1px solid #FF0055; border-radius:16px; padding:18px; margin:10px 0;}
 .money-card {background: linear-gradient(135deg,#0A2A1A,#0A1A2A); border:1px solid #FFC107; border-radius:16px; padding:18px; margin:10px 0;}
-.uk-card {background: linear-gradient(135deg,#0A1A3A,#1A0A3A); border:1px solid #00BFFF; border-radius:16px; padding:18px; margin:10px 0;}
+.uk-card {background: linear-gradient(135deg,#0A1A3A,#1A0A2A); border:1px solid #00BFFF; border-radius:16px; padding:18px; margin:10px 0;}
 .usa-card {background: linear-gradient(135deg,#1A0A2A,#0A2A1A); border:1px solid #FF6B00; border-radius:16px; padding:18px; margin:10px 0;}
 .thumb-card {background:#1E1E32; border:1px solid #7B00FF; border-radius:14px; padding:14px; margin:8px 0;}
 .small {color:#9A9AB0; font-size:13px;}
@@ -28,7 +28,6 @@ if "data" not in st.session_state: st.session_state.data = None
 if "analysis" not in st.session_state: st.session_state.analysis = None
 if "generated" not in st.session_state: st.session_state.generated = False
 
-# ---------- COUNTRIES ----------
 COUNTRIES = {
     "Pakistan": {"code": "PK", "lang": "Urdu", "rpm_avg": 0.6, "best_time": "Raat 8-10 PM PKT", "best_day": "Fri-Sun"},
     "India": {"code": "IN", "lang": "Hindi", "rpm_avg": 0.45, "best_time": "Raat 8:30-10:30 PM IST", "best_day": "Fri-Sun"},
@@ -94,9 +93,8 @@ def estimate_rpm(title):
     if "love" in t or "proposal" in t: return "$0.20-$0.50 PK / $1.20-$2.50 WW", 70, "Sirf love scene mat dikhao"
     return "$0.30-$0.70 PK / $1.80-$3.50 WW", 80, "Video 8+ min rakho"
 
-# ---------- UK / USA SPECIAL - 3 Titles + Tags + RPM ----------
+# ---------- UK / USA SPECIAL ----------
 def get_uk_titles(topic):
-    # UK ke liye 3 alag English titles - Search me dene ke liye
     data = [
         {"#": 1, "Country": "UK", "Title": f"{topic} Explained in English - Shocking Twist Ending Revealed!", "Language": "English", "RPM Estimate": "$2.50 - $5.00 (UK)", "RPM Score": 96, "Viral Score": 95, "Why": "UK me English search zyada, Explained = High RPM", "Search Keywords": f"{topic.lower()} explained in english, {topic.lower()} english subtitles"},
         {"#": 2, "Country": "UK", "Title": f"{topic} Full Episode Breakdown - Hidden Truth Finally Exposed", "Language": "English", "RPM Estimate": "$2.20 - $4.80 (UK)", "RPM Score": 93, "Viral Score": 92, "Why": "Breakdown keyword UK me High CPC hai", "Search Keywords": f"{topic.lower()} breakdown, {topic.lower()} review uk"},
@@ -112,6 +110,15 @@ def get_usa_titles(topic):
     ]
     return pd.DataFrame(data)
 
+def dedup_tags_df(df):
+    # Kisi bhi tags DataFrame se duplicate hatane ke liye - safe
+    if df is None or len(df) == 0: return df
+    df = df.copy()
+    df["_norm"] = df["Tag"].astype(str).str.lower().str.strip()
+    df = df.drop_duplicates(subset=["_norm"], keep="first").drop(columns=["_norm"]).reset_index(drop=True)
+    df["#"] = range(1, len(df)+1)
+    return df
+
 def get_uk_tags(topic):
     tags = [
         (f"{topic.lower()} explained in english", "Very High", "Low", 98, "$2.50-$5.00"),
@@ -123,7 +130,8 @@ def get_uk_tags(topic):
         (f"{topic.lower()} next episode prediction english", "High", "Very Low", 90, "$1.80-$4.00"),
         (f"{topic.lower()} british reaction pakistani drama", "High", "Very Low", 93, "$2.00-$4.50"),
     ]
-    return pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "SEO Score": s, "RPM Estimate": r} for i,(t,v,c,s,r) in enumerate(tags)])
+    df = pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "SEO Score": s, "RPM Estimate": r} for i,(t,v,c,s,r) in enumerate(tags)])
+    return dedup_tags_df(df)
 
 def get_usa_tags(topic):
     tags = [
@@ -136,7 +144,8 @@ def get_usa_tags(topic):
         (f"{topic.lower()} pakistani drama usa", "High", "Low", 92, "$2.50-$5.00"),
         (f"{topic.lower()} american reaction pakistani drama", "High", "Very Low", 93, "$2.50-$5.00"),
     ]
-    return pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "SEO Score": s, "RPM Estimate": r} for i,(t,v,c,s,r) in enumerate(tags)])
+    df = pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "SEO Score": s, "RPM Estimate": r} for i,(t,v,c,s,r) in enumerate(tags)])
+    return dedup_tags_df(df)
 
 VIRAL_TAGS_POOL = [
     "shocking twist ending", "ending revealed", "full episode explained", "truth exposed secret", "next episode prediction",
@@ -173,6 +182,8 @@ def get_top_videos_for_country(query, country_name):
                     if vr.status_code == 200 and vr.json().get("items"):
                         s = vr.json()["items"][0]["statistics"]; views = int(s.get("viewCount", 0)); likes = int(s.get("likeCount", 0))
                     vtags = random.sample(VIRAL_TAGS_POOL, 6)
+                    # Video ke andar bhi dedup - ek video me same tag dobara na aye
+                    vtags = list(dict.fromkeys([t.lower().strip() for t in vtags]))
                     videos.append({"Title": it["snippet"]["title"], "Channel": it["snippet"]["channelTitle"], "Published": it["snippet"]["publishedAt"][:10], "Views": views, "Likes": likes, "VideoID": vid, "Thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg", "URL": f"https://youtube.com/watch?v={vid}", "Country": country_name, "Tags": ", ".join(vtags), "TagsList": vtags})
                 if videos: return videos, "YouTube LIVE"
         except: pass
@@ -184,6 +195,7 @@ def get_top_videos_for_country(query, country_name):
         mult = {"Pakistan": 1.0, "India": 1.8, "USA": 0.6, "UK": 0.4, "UAE": 0.5, "Canada": 0.35, "Australia": 0.3, "Bangladesh": 0.7, "Saudi Arabia": 0.5, "All Countries (Worldwide)": 2.5}.get(country_name, 1.0)
         v = int(random.randint(400000, 3000000) * mult); vid = demo_ids[i]
         vtags = random.sample(VIRAL_TAGS_POOL, 6)
+        vtags = list(dict.fromkeys([t.lower().strip() for t in vtags]))
         videos.append({"Title": f"{query} - {p} | {country_name} Trending", "Channel": f"{country_name} Drama {i+1}", "Published": "2026-11-20", "Views": v, "Likes": int(v*0.06), "VideoID": vid, "Thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg", "URL": f"https://youtube.com/watch?v={vid}", "Country": country_name, "Tags": ", ".join(vtags), "TagsList": vtags})
     return videos, "Demo"
 
@@ -196,21 +208,36 @@ def get_all_countries_videos(query):
         except: continue
     return all_videos
 
+# ---------- MAIN FIX - NO REPEAT TAGS ----------
 def extract_50_unique_tags_from_viral(all_videos, topic):
-    seen = set(); unique_tags = []
+    seen_normalized = set()
+    unique_tags = []
+    def normalize_tag(t):
+        t = str(t).lower().strip()
+        t = re.sub(r'\s+', ' ', t)
+        t = t.replace(topic.lower(), "").strip()
+        return t
     try:
         sorted_vids = sorted(all_videos, key=lambda x: x.get("Views", 0), reverse=True)
-    except: sorted_vids = all_videos
+    except:
+        sorted_vids = all_videos
+    # Har video ko bari bari dekho - jo tag pehle aa gaya wo dobara kabhi nahi ayega
     for vid in sorted_vids:
         for tag in vid.get("TagsList", []):
-            full = f"{topic.lower()} {tag}" if topic.lower() not in str(tag).lower() else tag
-            if full not in seen:
-                seen.add(full); unique_tags.append(full)
+            full = f"{topic.lower()} {tag}" if topic.lower() not in str(tag).lower() else str(tag)
+            norm = normalize_tag(full)
+            if norm == "" or norm in seen_normalized:
+                continue
+            seen_normalized.add(norm)
+            unique_tags.append(full)
             if len(unique_tags) >= 40: break
         if len(unique_tags) >= 40: break
     extra = [f"{topic.lower()} viral twist", f"{topic.lower()} episode breakdown", f"{topic.lower()} full story", f"{topic.lower()} hindi dubbed", f"{topic.lower()} english subtitles", f"{topic.lower()} ost viral", f"{topic.lower()} teaser breakdown", f"{topic.lower()} season finale", f"{topic.lower()} behind scenes", f"{topic.lower()} actor interview"]
     for e in extra:
-        if e not in seen: unique_tags.append(e)
+        norm = normalize_tag(e)
+        if norm not in seen_normalized:
+            seen_normalized.add(norm)
+            unique_tags.append(e)
     tags_data = []
     for i, tag in enumerate(unique_tags[:50]):
         vol = "Very High" if i < 20 else "High"
@@ -218,12 +245,19 @@ def extract_50_unique_tags_from_viral(all_videos, topic):
         score = calc_tag_score(vol, comp)
         score = max(82, min(99, score + random.randint(-3, 3)))
         tags_data.append({"#": i+1, "Tag": tag, "Source Video": "Viral Top Videos", "Search Volume": vol, "Competition": comp, "SEO Score": score})
+    counter = 1
     while len(tags_data) < 50:
-        idx = len(tags_data)
-        extra_tag = f"{topic.lower()} viral scene {idx+1}"
-        if extra_tag not in [d["Tag"] for d in tags_data]:
-            tags_data.append({"#": idx+1, "Tag": extra_tag, "Source Video": "Viral Top Videos", "Search Volume": "High", "Competition": "Low", "SEO Score": 85})
-    df = pd.DataFrame(tags_data).sort_values("SEO Score", ascending=False).reset_index(drop=True)
+        extra_tag = f"{topic.lower()} viral moment {counter} unique"
+        norm = normalize_tag(extra_tag)
+        if norm not in seen_normalized:
+            seen_normalized.add(norm)
+            tags_data.append({"#": len(tags_data)+1, "Tag": extra_tag, "Source Video": "Viral Top Videos", "Search Volume": "High", "Competition": "Low", "SEO Score": 85})
+        counter += 1
+        if counter > 200: break
+    df = pd.DataFrame(tags_data)
+    # Final safety - phir bhi koi duplicate reh gaya to hata do
+    df = dedup_tags_df(df)
+    df = df.sort_values("SEO Score", ascending=False).reset_index(drop=True)
     df["#"] = range(1, len(df)+1)
     return df
 
@@ -257,7 +291,8 @@ def generate_titles_from_viral_tags(topic, viral_tags_df, power):
 
 def get_english_high_rpm_related_tags(topic):
     tags = [(f"{topic.lower()} explained in english", "Very High", "Low", 98, "USA/UK audience"), (f"{topic.lower()} with english subtitles", "Very High", "Low", 97, "Worldwide views"), (f"{topic.lower()} episode breakdown english", "High", "Very Low", 95, "High CPC"), (f"{topic.lower()} full story explained english", "Very High", "Low", 96, "Max RPM"), (f"{topic.lower()} drama review and analysis", "High", "Low", 94, "Long watch time"), (f"{topic.lower()} pakistani drama reaction english", "High", "Very Low", 93, "High RPM category"), (f"{topic.lower()} drama news update english", "Very High", "Low", 95, "News highest RPM"), (f"{topic.lower()} best pakistani drama 2026 english", "High", "Low", 90, "Yearly search"), (f"{topic.lower()} ost review english", "High", "Very Low", 91, "Music high bid"), (f"{topic.lower()} hindi dubbed drama english subtitles", "High", "Low", 92, "India + USA")]
-    return pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "RPM Score": s, "Why High RPM": w} for i,(t,v,c,s,w) in enumerate(tags)])
+    df = pd.DataFrame([{"#": i+1, "Tag": t, "Search Volume": v, "Competition": c, "RPM Score": s, "Why High RPM": w} for i,(t,v,c,s,w) in enumerate(tags)])
+    return dedup_tags_df(df)
 
 def make_long_description(topic, titles_df, tags_df, ww_tags_text):
     top_title = titles_df.iloc[0]["Title"] if len(titles_df)>0 else topic
@@ -301,15 +336,15 @@ Thanks for watching! Milte hain agle episode ke review me. Allah Hafiz!
 """
 
 # ---------- HEADER ----------
-st.title("🔥 SEO Viral Engine Pro v5 - UK USA Special")
-st.markdown("**Top 10 Per Country + 50 Viral Tags + Titles From Viral Tags + UK/USA 3 Titles + UK/USA Tags + RPM + 10 Unique Thumbnails + Long Description**")
+st.title("🔥 SEO Viral Engine Pro v5.1 - No Repeat Tags")
+st.markdown("**Top 10 Per Country + 50 UNIQUE Viral Tags (No Repeat) + Titles From Viral Tags + UK/USA 3 Titles + UK/USA Tags + RPM + 10 Unique Thumbnails + Long Description**")
 with st.sidebar:
-    st.title("🔥 SEO Viral Engine v5")
+    st.title("🔥 SEO Viral Engine v5.1")
     st.write("✅ All Countries")
     st.write("✅ India Alag Se")
     st.write("✅ UK - 3 Titles + Tags + RPM")
     st.write("✅ USA - 3 Titles + Tags + RPM")
-    st.write("✅ 50 Viral Tags")
+    st.write("✅ 50 UNIQUE Tags - No Repeat")
     st.write("✅ Titles From Viral Tags")
     st.write("✅ 10 Unique Thumbnails")
     st.write("✅ Long Description")
@@ -317,10 +352,9 @@ with st.sidebar:
     st.divider()
     st.info("Model: Pollinations AI FREE\nData: YouTube + Google Trends")
 
-# ---------- UK / USA SPECIAL - TOP PE HI SHOW (Topic ke bagair bhi kaam karega) ----------
+# ---------- UK / USA SPECIAL ----------
 st.markdown('<div class="uk-card">', unsafe_allow_html=True)
 st.subheader("🇬🇧 UK Special - 3 Titles + Tags + RPM (Video Search Me Dene Ke Liye)")
-st.write("UK ke liye alag English titles hain. Inko UK audience ke liye alag video ya same video ke title me use karo. Har title ke sath RPM likha hai.")
 uk_topic_preview = st.text_input("UK/USA ke liye Topic (Preview ke liye)", placeholder="Example: Tere Bin Season 2", key="uk_preview")
 uk_topic = uk_topic_preview if uk_topic_preview else "Tere Bin Season 2"
 uk_df = get_uk_titles(uk_topic)
@@ -336,7 +370,6 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="usa-card">', unsafe_allow_html=True)
 st.subheader("🇺🇸 USA Special - 3 Titles + Tags + RPM (Video Search Me Dene Ke Liye)")
-st.write("USA ka RPM sab se zyada hai ($3-$6). Is liye USA ke titles English me + Reaction / Full Story wale hain.")
 usa_df = get_usa_titles(uk_topic)
 st.dataframe(usa_df, use_container_width=True)
 usa_tags_df = get_usa_tags(uk_topic)
@@ -406,7 +439,6 @@ if st.session_state.data:
     m3.metric("Avg Views", f"{analysis['avg_views']:,}")
     m4.metric("Power Words", f"{len(analysis['power_words'])}")
 
-    # UK / USA FOR THIS TOPIC - Alag se
     st.markdown('<div class="uk-card">', unsafe_allow_html=True)
     st.subheader(f"🇬🇧 UK Special For: {topic} - 3 Titles + Tags + RPM")
     uk2_df = get_uk_titles(topic); st.dataframe(uk2_df, use_container_width=True)
@@ -446,9 +478,9 @@ if st.session_state.data:
     except Exception as e: st.error(f"Videos show me error: {e}")
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("3. Generate - Titles From Viral Tags + 50 Tags + Thumbnails + Long Description")
+    st.subheader("3. Generate - Titles From Viral Tags + 50 UNIQUE Tags + Thumbnails + Long Description")
     if st.button("✨ GENERATE FULL VIRAL PACK - FROM VIRAL TAGS"):
-        with st.spinner("Viral tags se titles bana raha hoon..."):
+        with st.spinner("Viral tags se titles bana raha hoon - No Repeat..."):
             try:
                 tags_df = extract_50_unique_tags_from_viral(all_videos, topic)
                 st.session_state.tags_df = tags_df
@@ -459,7 +491,7 @@ if st.session_state.data:
                 ww_df = get_english_high_rpm_related_tags(topic); st.session_state.ww_df = ww_df
                 ww_text = ", ".join(ww_df["Tag"].tolist())
                 st.session_state.long_desc = make_long_description(topic, titles_df, tags_df, ww_text)
-                st.session_state.generated = True; st.success(f"Generated via {model}"); st.rerun()
+                st.session_state.generated = True; st.success(f"Generated via {model} - {len(tags_df)} UNIQUE tags, 0 repeat!"); st.rerun()
             except Exception as e: st.error(f"Generate me error: {e}")
 
     if st.session_state.get("generated") and "titles_df" in st.session_state and "tags_df" in st.session_state:
@@ -493,15 +525,17 @@ if st.session_state.data:
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.subheader("🏷️ Tags - 3 Alag Tabs")
-        tab1, tab2, tab3 = st.tabs(["🏷️ 50 Viral Tags (From Viral Videos)", "🌍 Worldwide High RPM Tags", "🇬🇧 English Countries High RPM - Drama Related ONLY"])
+        tab1, tab2, tab3 = st.tabs(["🏷️ 50 UNIQUE Tags (No Repeat)", "🌍 Worldwide High RPM Tags", "🇬🇧 English Countries High RPM - Drama Related ONLY"])
         with tab1:
+            st.write("✅ Ye 50 tags 100% UNIQUE hain. Ek tag jo ek video se aa gaya wo dusri video se dobara nahi ayega.")
             st.dataframe(st.session_state.tags_df, use_container_width=True)
             all_50 = ", ".join(st.session_state.tags_df["Tag"].tolist())
-            st.text_area("Copy All 50 Tags (Comma - YouTube Paste)", value=all_50, height=100, key="all50")
-            st.download_button("⬇️ Download 50 Tags CSV", data=st.session_state.tags_df.to_csv(index=False).encode(), file_name="50_viral_tags.csv")
-            st.download_button("⬇️ Download 50 Tags TXT", data=all_50.encode(), file_name="50_viral_tags.txt")
+            st.text_area("Copy All 50 UNIQUE Tags (Comma - YouTube Paste)", value=all_50, height=100, key="all50")
+            st.download_button("⬇️ Download 50 UNIQUE Tags CSV", data=st.session_state.tags_df.to_csv(index=False).encode(), file_name="50_unique_viral_tags.csv")
+            st.download_button("⬇️ Download 50 UNIQUE Tags TXT", data=all_50.encode(), file_name="50_unique_viral_tags.txt")
         with tab2:
             ww_general = pd.DataFrame([{"#": 1, "Tag": "pakistani drama explained in english", "RPM": "Very High", "Score": 98}, {"#": 2, "Tag": "pakistani drama with english subtitles", "RPM": "Very High", "Score": 97}, {"#": 3, "Tag": "drama review and analysis", "RPM": "High", "Score": 94}, {"#": 4, "Tag": "pakistani drama reaction", "RPM": "High", "Score": 93}, {"#": 5, "Tag": "urdu drama hindi dubbed", "RPM": "High", "Score": 92}, {"#": 6, "Tag": "pakistani drama ost review", "RPM": "High", "Score": 91}, {"#": 7, "Tag": "best pakistani drama 2026", "RPM": "High", "Score": 90}, {"#": 8, "Tag": "pakistani drama news update", "RPM": "Very High", "Score": 95}, {"#": 9, "Tag": "drama episode breakdown", "RPM": "High", "Score": 93}, {"#": 10, "Tag": "pakistani drama full story explained", "RPM": "Very High", "Score": 96}])
+            ww_general = dedup_tags_df(ww_general)
             st.dataframe(ww_general, use_container_width=True)
             st.text_area("Copy Worldwide Tags", value=", ".join(ww_general["Tag"].tolist()), height=80)
         with tab3:
@@ -516,9 +550,9 @@ if st.session_state.data:
         st.download_button("⬇️ Download Long Description", data=st.session_state.long_desc.encode(), file_name="long_description.txt")
         st.subheader("🚀 Full Viral Strategy")
         st.text_area("Strategy", value=st.session_state.ai_strategy, height=350)
-        everything = f"TOP 10 TITLES:\n{all_titles_text}\n\nUK TITLES:\n{uk2_titles_text}\nUK TAGS:\n{uk2_tags_text}\n\nUSA TITLES:\n{usa2_titles_text}\nUSA TAGS:\n{usa2_tags_text}\n\n50 VIRAL TAGS:\n{', '.join(st.session_state.tags_df['Tag'].tolist())}\n\nENGLISH HIGH RPM TAGS:\n{eng_tags}\n\nTHUMBNAILS:\n{thumb_text}\n\nLONG DESCRIPTION:\n{st.session_state.long_desc}\n\nSTRATEGY:\n{st.session_state.ai_strategy}"
+        everything = f"TOP 10 TITLES:\n{all_titles_text}\n\nUK TITLES:\n{uk2_titles_text}\nUK TAGS:\n{uk2_tags_text}\n\nUSA TITLES:\n{usa2_titles_text}\nUSA TAGS:\n{usa2_tags_text}\n\n50 UNIQUE VIRAL TAGS (NO REPEAT):\n{', '.join(st.session_state.tags_df['Tag'].tolist())}\n\nENGLISH HIGH RPM TAGS:\n{eng_tags}\n\nTHUMBNAILS:\n{thumb_text}\n\nLONG DESCRIPTION:\n{st.session_state.long_desc}\n\nSTRATEGY:\n{st.session_state.ai_strategy}"
         st.subheader("📦 Copy EVERYTHING")
         st.text_area("Full Pack", value=everything, height=300)
-        st.download_button("⬇️ DOWNLOAD FULL PACK", data=everything.encode(), file_name="full_pack_v5.txt")
+        st.download_button("⬇️ DOWNLOAD FULL PACK", data=everything.encode(), file_name="full_pack_v5_1.txt")
     st.markdown('</div>', unsafe_allow_html=True)
-    st.caption("SEO Viral Engine Pro v5.0 | UK/USA Special + All Countries + No Error")
+    st.caption("SEO Viral Engine Pro v5.1 | UK/USA Special + All Countries + 50 UNIQUE Tags No Repeat + No Error")
