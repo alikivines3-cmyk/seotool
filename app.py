@@ -5,8 +5,11 @@ from collections import Counter
 
 import streamlit as st
 import pandas as pd
-from dotenv import load_dotenv
+import os
+import streamlit as st
 
+# Streamlit Cloud پر Secrets سے پڑھیں، مقامی طور پر ماحول متغیرات پر واپس جائیں
+YOUTUBE_API_KEY = st.secrets.get("YOUTUBE_API_KEY", os.getenv("YOUTUBE_API_KEY", ""))
 from pytrends.request import TrendReq
 from googleapiclient.discovery import build
 
