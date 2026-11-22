@@ -1,4 +1,5 @@
 streamlit
+plotly
 pandas
 pytrends
 google-api-python-client
